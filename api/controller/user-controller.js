@@ -21,6 +21,24 @@ const healthCheck = async (req, res) => {
     })
 }
 
+const sendSms = async (req, res) => {
+    const accountSid = `${process.env.ACCOUNT_SID}`
+    const authToken = `${process.env.AUTH_TOKEN}`
+    const client = require("twilio")(accountSid, authToken)
+
+    client.messages
+        .create({
+            body: `${process.env.MESSAGE}`,
+            from: `${process.env.FROM_PHONE_NUMBER}`,
+            to: `${process.env.TO_PHONE_NUMBER}`,
+        })
+        .then((message) => console.log(`Message ${message.sid} sent successfully`))
+        .catch((error) => {
+            console.log(error)
+        })
+}
+
 module.exports = {
     healthCheck,
+    sendSms,
 }
