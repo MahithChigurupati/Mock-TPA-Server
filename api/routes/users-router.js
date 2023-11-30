@@ -7,4 +7,10 @@ const router = require("express").Router()
 //Route for GET method -- a health check method
 router.get("/health", userController.healthCheck)
 
+router.post("/createUser", userController.createUser)
+
+router.post("/sendSMS", userController.sendSms)
+
+router.post("/verifyOTP", userController.verifyOtp)
+
 module.exports = router

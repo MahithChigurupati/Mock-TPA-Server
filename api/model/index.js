@@ -34,6 +34,7 @@ db.sequelize = sequelize
 
 //utilizing DB Schema with sequelize
 db.users = require("./userModel")(sequelize, DataTypes)
+db.otps = require("./otpModel")(sequelize, DataTypes)
 
 db.sequelize.sync({ force: false }).then(() => {
     console.log("Syncing DB...")

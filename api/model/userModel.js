@@ -16,15 +16,15 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING,
                 allowNull: false,
             },
-            username: {
-                type: DataTypes.STRING,
-                allowNull: false,
-            },
-            password: {
+            dob: {
                 type: DataTypes.STRING,
                 allowNull: false,
             },
             phone: {
+                type: DataTypes.STRING,
+                allowNull: false,
+            },
+            id_type: {
                 type: DataTypes.STRING,
                 allowNull: false,
             },
