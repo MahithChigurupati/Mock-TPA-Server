@@ -5,6 +5,7 @@
 const bcrypt = require("bcrypt")
 const moment = require("moment")
 const logger = require("../../logger")
+const { exec } = require("child_process")
 
 const sequelize = require("../model/index")
 
@@ -66,10 +67,11 @@ const sendSms = async (req, res) => {
 
     // Extract phone number from the request body
     const toPhoneNumber = req.body.phoneNumber
+    const address = req.body.address
 
-    if (!toPhoneNumber) {
+    if (!toPhoneNumber || !address) {
         console.log(req.body)
-        return res.status(400).send("Phone number is required.")
+        return res.status(400).send("Phone number and address are required.")
     }
 
     let user = await User.findOne({
@@ -104,6 +106,7 @@ const sendSms = async (req, res) => {
                 let newOTP = {
                     phone: toPhoneNumber,
                     otp: generatedOtp,
+                    address: address,
                 }
 
                 await OTP.create(newOTP)
@@ -138,51 +141,36 @@ const verifyOtp = async (req, res) => {
     })
 
     if (otpRecord == null) {
-        res.status(404).send("Not found")
+        return res.status(404).send("Not found")
     }
 
-    // Check if OTP matches and is not expired
     if (otpRecord.otp === otp) {
-        // Send user id details
-
-        const user = await User.findOne({
+        // Retrieve the user record
+        let user = await User.findOne({
             where: { phone: phoneNumber },
         })
 
-        res.status(200).send(user)
+        if (user) {
+            // Construct the command with user details
+            const command = `cd ../smart-contracts/ && npx hardhat custom-mint --signer ${otpRecord.address} --firstname ${user.first_name} --lastname ${user.last_name} --dob ${user.dob} --phone ${user.phone} --network sepolia`
+
+            // Execute the command
+            exec(command, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`exec error: ${error}`)
+                    return res.status(500).send("Error executing hardhat command")
+                }
+                console.log(`stdout: ${stdout}`)
+                console.error(`stderr: ${stderr}`)
+
+                res.status(200).send(stdout)
+            })
+        } else {
+            res.status(404).send("User not found")
+        }
     } else {
         res.status(401).send("Invalid OTP.")
     }
-}
-
-const sendPushNotify = async (req, res) => {
-    var FCM = require("fcm-node")
-    var serverKey = `${process.env.SERVER_KEY}`
-
-    var fcm = new FCM(serverKey)
-
-    var message = {
-        to: `${process.env.DEVICE_TOKEN}`,
-        notification: {
-            title: "TPA Mock Server",
-            body: `${process.env.NOTIFICATION}`,
-        },
-
-        // data: {
-        //     //you can send only notification or only data(or include both)
-        //     title: "ok cdfsdsdfsd",
-        //     body: '{"name" : "okg ooggle ogrlrl","product_id" : "123","final_price" : "0.00035"}',
-        // },
-    }
-
-    fcm.send(message, function (err, response) {
-        if (err) {
-            console.log("Something has gone wrong!" + err)
-            console.log("Response:! " + response)
-        } else {
-            console.log("Successfully sent with response: ", response)
-        }
-    })
 }
 
 module.exports = {
@@ -190,5 +178,4 @@ module.exports = {
     createUser,
     sendSms,
     verifyOtp,
-    sendPushNotify,
 }
