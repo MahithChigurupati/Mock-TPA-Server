@@ -13,4 +13,6 @@ router.post("/sendSMS", userController.sendSms)
 
 router.post("/verifyOTP", userController.verifyOtp)
 
+router.post("/createSSAUser", userController.createSSAUser)
+
 module.exports = router

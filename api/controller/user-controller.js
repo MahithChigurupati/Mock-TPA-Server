@@ -1,14 +1,10 @@
-// importing external libraries
-// bcrypt for hashing the password
-// moment for creating timestamps
-// logger for logging
-const bcrypt = require("bcrypt")
 const moment = require("moment")
 const logger = require("../../logger")
 const { exec } = require("child_process")
 
 const ethers = require("ethers")
 const addresses = require("../../constants/contractAddresses.json")
+const addr = require("../../constants/addresses.json")
 const contractABI = require("../../constants/abi.json")
 
 const sequelize = require("../model/index")
@@ -17,6 +13,7 @@ const sequelize = require("../model/index")
 const db = require("../model")
 const User = db.users
 const OTP = db.otps
+const SSAUser = db.ssaUsers
 
 // A health check method to check db connection status
 const healthCheck = async (req, res) => {
@@ -27,8 +24,42 @@ const healthCheck = async (req, res) => {
     })
 }
 
+const createSSAUser = async (req, res) => {
+    const { idType, firstName, lastName, dateOfBirth, phoneNumber } = req.body
+
+    if (!idType || !firstName || !lastName || !dateOfBirth || !phoneNumber) {
+        return res.status(400).send("Bad request")
+    }
+
+    // Check if user already exists
+    let user = await SSAUser.findOne({
+        where: { phone: phoneNumber },
+    })
+
+    if (user != null) {
+        logger.info(`GET: Success`)
+
+        res.status(409).send("User already exists.")
+    }
+
+    var date = moment().tz("America/New_York").format("YYYY-MM-DDTHH:mm:ss.sss")
+
+    let newUser = {
+        first_name: firstName,
+        last_name: lastName,
+        dob: dateOfBirth,
+        phone: phoneNumber,
+        id_type: idType,
+        account_created: date,
+        account_updated: date,
+    }
+
+    await SSAUser.create(newUser)
+
+    res.status(201).send("SSA User created successfully.")
+}
+
 const createUser = async (req, res) => {
-    // Extract user details from the request body
     const { idType, firstName, lastName, dateOfBirth, phoneNumber } = req.body
 
     if (!idType || !firstName || !lastName || !dateOfBirth || !phoneNumber) {
@@ -48,7 +79,6 @@ const createUser = async (req, res) => {
 
     var date = moment().tz("America/New_York").format("YYYY-MM-DDTHH:mm:ss.sss")
 
-    // Create a new user
     let newUser = {
         first_name: firstName,
         last_name: lastName,
@@ -69,18 +99,30 @@ const sendSms = async (req, res) => {
     const authToken = `${process.env.AUTH_TOKEN}`
     const client = require("twilio")(accountSid, authToken)
 
-    // Extract phone number from the request body
     const toPhoneNumber = req.body.phoneNumber
     const address = req.body.address
+    const id_type = req.body.id_type
 
     if (!toPhoneNumber || !address) {
         console.log(req.body)
         return res.status(400).send("Phone number and address are required.")
     }
 
-    let user = await User.findOne({
-        where: { phone: toPhoneNumber },
-    })
+    if (!id_type) {
+        return res.status(400).send("ID type is required.")
+    }
+
+    let user = null
+
+    if (id_type == "SSA") {
+        user = await SSAUser.findOne({
+            where: { phone: toPhoneNumber },
+        })
+    } else {
+        user = await User.findOne({
+            where: { phone: toPhoneNumber },
+        })
+    }
 
     if (user == null) {
         res.status(404).send("Not found")
@@ -130,7 +172,7 @@ const sendSms = async (req, res) => {
 }
 
 const verifyOtp = async (req, res) => {
-    const { phoneNumber, otp } = req.body
+    const { phoneNumber, otp, id_type } = req.body
 
     if (!phoneNumber || !otp) {
         return res.status(400).send("Phone number and OTP are required.")
@@ -142,10 +184,28 @@ const verifyOtp = async (req, res) => {
         return res.status(404).send("OTP record not found.")
     }
 
+    if (!id_type) {
+        return res.status(400).send("ID type is required.")
+    }
+
+    let user = null
+    let contractAddress = null
+
     if (otpRecord.otp === otp) {
         console.log("OTP verified")
 
-        let user = await User.findOne({ where: { phone: phoneNumber } })
+        if (id_type == "SSA") {
+            user = await SSAUser.findOne({
+                where: { phone: phoneNumber },
+            })
+            contractAddress = addr["11155111"][0]
+        } else {
+            user = await User.findOne({
+                where: { phone: phoneNumber },
+            })
+
+            contractAddress = addresses["11155111"][0]
+        }
 
         if (!user) {
             return res.status(404).send("User not found")
@@ -153,7 +213,7 @@ const verifyOtp = async (req, res) => {
 
         console.log(`Running hardhat command for ${otpRecord.address}`)
 
-        const command = `cd ../smart-contracts/ && npx hardhat custom-mint --signer ${otpRecord.address} --firstname ${user.first_name} --lastname ${user.last_name} --dob ${user.dob} --phone ${user.phone} --network sepolia`
+        const command = `cd ../smart-contracts/ && npx hardhat custom-mint --id ${id_type} --signer ${otpRecord.address} --firstname ${user.first_name} --lastname ${user.last_name} --dob ${user.dob} --phone ${user.phone} --network sepolia`
 
         exec(command, async (error, stdout) => {
             if (error) {
@@ -166,7 +226,6 @@ const verifyOtp = async (req, res) => {
             console.log("Command executed, fetching ID data from blockchain")
 
             const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL)
-            const contractAddress = addresses["11155111"][0]
 
             if (!contractAddress) {
                 return res.status(500).send("Contract address not found.")
@@ -177,7 +236,6 @@ const verifyOtp = async (req, res) => {
             try {
                 const idData = await contract.getID(otpRecord.address)
 
-                // convert dob to timestamp
                 const dobTimestamp = Date.parse(user.dob)
 
                 const responseObj = {
@@ -206,4 +264,5 @@ module.exports = {
     createUser,
     sendSms,
     verifyOtp,
+    createSSAUser,
 }
